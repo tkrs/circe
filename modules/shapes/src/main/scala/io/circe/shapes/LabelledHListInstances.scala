@@ -13,7 +13,7 @@ import io.circe.{
   KeyEncoder,
   ObjectEncoder
 }
-import shapeless.{ ::, HList, Widen, Witness }
+import shapeless.{ ::, HList, Lazy, Widen, Witness }
 import shapeless.labelled.{ field, FieldType }
 
 trait LabelledHListInstances extends LowPriorityLabelledHListInstances {
@@ -26,17 +26,17 @@ trait LabelledHListInstances extends LowPriorityLabelledHListInstances {
   implicit final def decodeSymbolLabelledHCons[K <: Symbol, V, T <: HList](implicit
     witK: Witness.Aux[K],
     decodeV: Decoder[V],
-    decodeT: Decoder[T]
+    decodeT: Lazy[Decoder[T]]
   ): Decoder[FieldType[K, V] :: T] = new Decoder[FieldType[K, V] :: T] {
     def apply(c: HCursor): Decoder.Result[FieldType[K, V] :: T] = Decoder.resultInstance.map2(
       c.get[V](witK.value.name),
-      decodeT(c)
+      decodeT.value(c)
     )((h, t) => field[K](h) :: t)
 
     override def decodeAccumulating(c: HCursor): AccumulatingDecoder.Result[FieldType[K, V] :: T] =
       AccumulatingDecoder.resultInstance.map2(
         decodeV.tryDecodeAccumulating(c.downField(witK.value.name)),
-        decodeT.decodeAccumulating(c)
+        decodeT.value.decodeAccumulating(c)
       )((h, t) => field[K](h) :: t)
   }
 
@@ -63,7 +63,7 @@ private[shapes] trait LowPriorityLabelledHListInstances extends HListInstances {
     eqW: Eq[W],
     decodeW: KeyDecoder[W],
     decodeV: Decoder[V],
-    decodeT: Decoder[T]
+    decodeT: Lazy[Decoder[T]]
   ): Decoder[FieldType[K, V] :: T] = new Decoder[FieldType[K, V] :: T] {
     private[this] val widened = widenK(witK.value)
     private[this] val isK: String => Boolean = decodeW(_).exists(eqW.eqv(widened, _))
@@ -72,7 +72,7 @@ private[shapes] trait LowPriorityLabelledHListInstances extends HListInstances {
         c.keys.flatMap(_.find(isK)).fold[Decoder.Result[String]](
           Left(DecodingFailure("Record", c.history))
         )(Right(_)).right.flatMap(c.get[V](_)),
-      decodeT(c)
+      decodeT.value(c)
     )((h, t) => field[K](h) :: t)
 
     override def decodeAccumulating(c: HCursor): AccumulatingDecoder.Result[FieldType[K, V] :: T] =
@@ -80,7 +80,7 @@ private[shapes] trait LowPriorityLabelledHListInstances extends HListInstances {
         c.keys.flatMap(_.find(isK)).fold[AccumulatingDecoder.Result[String]](
           Validated.invalidNel(DecodingFailure("Record", c.history))
         )(Validated.valid).andThen(k => decodeV.tryDecodeAccumulating(c.downField(k))),
-        decodeT.decodeAccumulating(c)
+        decodeT.value.decodeAccumulating(c)
       )((h, t) => field[K](h) :: t)
   }
 

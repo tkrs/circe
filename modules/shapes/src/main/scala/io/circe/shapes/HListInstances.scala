@@ -1,7 +1,7 @@
 package io.circe.shapes
 
 import io.circe.{ AccumulatingDecoder, ArrayEncoder, Decoder, Encoder, HCursor, Json, JsonObject, ObjectEncoder }
-import shapeless.{ ::, HList, HNil }
+import shapeless.{ ::, HList, HNil, Lazy }
 
 trait HListInstances extends LowPriorityHListInstances {
   implicit final def decodeSingletonHList[H](implicit decodeH: Decoder[H]): Decoder[H :: HNil] =
@@ -21,12 +21,12 @@ private[shapes] trait LowPriorityHListInstances {
 
   implicit final def decodeHCons[H, T <: HList](implicit
     decodeH: Decoder[H],
-    decodeT: Decoder[T]
+    decodeT: Lazy[Decoder[T]]
   ): Decoder[H :: T] = new Decoder[H :: T] {
     def apply(c: HCursor): Decoder.Result[H :: T] = {
       val first = c.downArray
 
-      Decoder.resultInstance.map2(first.as(decodeH), decodeT.tryDecode(first.delete))(_ :: _)
+      Decoder.resultInstance.map2(first.as(decodeH), decodeT.value.tryDecode(first.delete))(_ :: _)
     }
 
     override def decodeAccumulating(c: HCursor): AccumulatingDecoder.Result[H :: T] = {
@@ -34,7 +34,7 @@ private[shapes] trait LowPriorityHListInstances {
 
       AccumulatingDecoder.resultInstance.map2(
         decodeH.tryDecodeAccumulating(first),
-        decodeT.tryDecodeAccumulating(first.delete)
+        decodeT.value.tryDecodeAccumulating(first.delete)
       )(_ :: _)
     }
   }
